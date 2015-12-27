@@ -1,0 +1,143 @@
+---
+title: "Final Machine Learning Project"
+author: "Jeff Sheremata"
+date: "December 25, 2015"
+output: html_document
+---
+
+#Project Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+The goal of your project is to predict the manner in which they did the exercise. This is the “classe” variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+##Project Summary
+
+The Fitbit data was first divided into training (60%) and validation (40%) sets.  The data was first processed to remove variables with near zero variance or that contained more than 70% NA values.  Decision tree and random forest machine learning prediction models were developed.  The random forest prediction model was more than 99% accurate in testing on validation data and correctly identified 20/20 samples in a final testing set.
+
+#####Load the necessary R packages
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+```
+
+
+##Data
+
+The data for this project come from  http://groupware.les.inf.puc-rio.br/har
+
+```{r}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train_data <- read.csv(url(trainUrl))
+test_data <- read.csv(url(testUrl))
+```
+
+###Partition the Training Data Into Training (train_data1 - 60%) and Validation (train_data2 - 40%) Sets
+
+```{r}
+set.seed(100)
+data_partition <- createDataPartition(y=train_data$classe, p=0.6, list=F)
+train_data1 <- train_data[data_partition, ]
+train_data2 <- train_data[-data_partition, ]
+```
+
+###Process The Data For Machine Learning
+The data is first processed to improve algorithm performance and speed.
+```{r}
+#Identify and remove variables with variances near zero
+NZR <- nearZeroVar(train_data1)
+train_data1 <- train_data1[, -NZR]
+train_data2 <- train_data2[, -NZR]
+
+#Identify and remove variables that contain more than 70% NA
+mostlyNA <- sapply(train_data1, function(x) mean(is.na(x))) > 0.70
+train_data1 <- train_data1[, mostlyNA==F]
+train_data2 <- train_data2[, mostlyNA==F]
+
+# Remove the first five variables from the training set
+train_data1 <- train_data1[, -(1:5)]
+train_data2 <- train_data2[, -(1:5)]
+```
+
+##Machine Learning Model Development
+
+###Machine Learning Prediction with Decision Trees
+
+####Decision Tree Algorithm Training
+
+```{r}
+set.seed(1000)
+#train_data1 is used to train the algorithm
+DT_Fit <- rpart(classe ~ ., data=train_data1, method="class")
+fancyRpartPlot(DT_Fit)
+```
+
+####Decision Tree Algorithm Validation
+This is a logical first predictive algorithm choice.  If the level of accuaracy is high, the decision tree model will be applied to the testing data.  Otherwise, alternative models will be developed.  
+```{r}
+#train_data2 is used to validate the model
+DT_Pred <- predict(DT_Fit, train_data2, type = "class")
+# The confusion matrix shows the out of sample error
+CM <- confusionMatrix(DT_Pred, train_data2$classe)
+CM
+```
+
+```{r}
+plot(CM$table, col = CM$byClass, main = paste("Decision Tree Confusion Matrix- Accuracy =", round(CM$overall['Accuracy'], 4)))
+```
+The accuracy of the decision tree model is `r 100*round(CM$overall['Accuracy'], 4)`%.  This implies that the out of sample error rate is `r round(100 - 100*CM$overall['Accuracy'], 2)`%.  I consider this level of accuracy to be inadequate for this project.  Thus, I will investigate how a random forest model performs.
+
+###Random Forest Machine Learning Prediction
+
+####Random Forest Algorithm Training
+
+```{r}
+#train_data1 is used to develop the decision tree model
+RF_fit<-randomForest(classe ~ ., data=train_data1)
+RF_fit$finalModel
+```
+
+####Random Forest Algorithm Validation
+
+```{r}
+# train_data2 is used to validate the decision tree model
+RF_Pred <- predict(RF_fit, newdata=train_data2)
+
+# The confusion matrix shows the out of sample error
+CM<-confusionMatrix(train_data2$classe, RF_Pred)
+CM
+```
+
+```{r}
+plot(CM$table, col = CM$byClass, main = paste("Random Forest Confusion Matrix - Accuracy =", round(CM$overall['Accuracy'], 4)))
+```
+
+The accuracy of the random forst model is `r 100*round(CM$overall['Accuracy'], 4)`%.  This implies that the out of sample error rate is `r round(100 - 100*CM$overall['Accuracy'], 2)`%.  Both of these levels are excellent and I will now use the random forest model for predicitons with the testing data.  
+
+###Random Forest Algorithm Testing
+
+```{r}
+#test_data is used to test the final random forest prediction algorithm
+Pred_final <- predict(RF_fit , test_data, type = "class")
+Pred_final <- as.character(Pred_final)
+pml_write_files <- function(x) {
+    n <- length(x)
+    for(i in 1:n) {
+        filename <- paste0("problem_id_", i, ".txt")
+        write.table(x[i], file=filename, quote=F, row.names=F, col.names=F)
+    }
+}
+
+pml_write_files(Pred_final)
+Pred_final
+```
+
+###Final Remarks
+
+20/20 of the predictions in the final test set were correct.  Thus, for the purposes of this assignment, the random forest model is a succesful machine learning prediction algorithm.  If 100% of the samples were not predicted sucessfully, I would have trained the algorithm using all of the training data, and then applied the final model to the testing set.
+
